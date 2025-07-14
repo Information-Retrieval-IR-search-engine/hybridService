@@ -1,15 +1,24 @@
 from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List
 import httpx
 import asyncio
 
 app = FastAPI()
 
-# Config
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+# URLs of your TF-IDF and Embedding search services
 TFIDF_API_URL = "http://localhost:8001/search"
 EMBEDDING_API_URL = "http://localhost:8002/search"
 
+# Response schemas
 class Document(BaseModel):
     doc_id: str
     text: str
@@ -18,11 +27,8 @@ class Document(BaseModel):
 class SearchResponse(BaseModel):
     results: List[Document]
 
-def merge_results(tfidf_results, embedding_results, alpha=0.5):
-    """
-    Merge TF-IDF and embedding results using a weighted score.
-    alpha: weight for TF-IDF, (1 - alpha) for embedding
-    """
+# Result merger
+def merge_results(tfidf_results, embedding_results, alpha=0.9):
     merged = {}
 
     for doc in tfidf_results:
@@ -40,24 +46,39 @@ def merge_results(tfidf_results, embedding_results, alpha=0.5):
                 "score": (1 - alpha) * doc['score']
             }
 
-    # Convert to list and sort by score descending
     combined = [
         {"doc_id": doc_id, "text": data["text"], "score": data["score"]}
         for doc_id, data in merged.items()
     ]
     return sorted(combined, key=lambda x: x["score"], reverse=True)
 
-@app.get("/hybrid_search", response_model=SearchResponse)
+# ✅ Main hybrid endpoint
+@app.get("/hybrid_search")
 async def hybrid_search(query: str = Query(...)):
     async with httpx.AsyncClient() as client:
-        tfidf_task = client.get(TFIDF_API_URL, params={"query": query})
-        embed_task = client.get(EMBEDDING_API_URL, params={"query": query})
+        tfidf_response = await client.post(TFIDF_API_URL, data={"query": query, "algorithm": "tfidf"})
+        embed_response = await client.post(EMBEDDING_API_URL,data={"query": query, "algorithm": "embedding"})
+        tfidf_results = tfidf_response.json().get("results", [])
+        embedding_results = embed_response.json().get("results", [])
+        combined_results = merge_results(tfidf_results, embedding_results)
+        return {"results": combined_results}
+        # return embed_response.json()
 
-        tfidf_response, embed_response = await asyncio.gather(tfidf_task, embed_task)
+        # tfidf_response, embed_response = await asyncio.gather(tfidf_task, embed_task)
+        # tfidf_response = await asyncio.gather(tfidf_task)
 
-    tfidf_results = tfidf_response.json()
-    embedding_results = embed_response.json()
 
-    combined_results = merge_results(tfidf_results, embedding_results)
+    # combined_results = merge_results(tfidf_results, embedding_results)
 
-    return {"results": combined_results}
+    # return {"results": combined_results}
+    # return { "results": [{"doc_id": 1, "text": "This is a sample document.", "score": 0.8},{"doc_id": 2, "text": "Another document.", "score": 0.6}] };
+
+
+
+
+
+
+
+
+
+
