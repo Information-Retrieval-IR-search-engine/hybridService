@@ -28,7 +28,7 @@ class SearchResponse(BaseModel):
     results: List[Document]
 
 # Result merger
-def merge_results(tfidf_results, embedding_results, alpha=0.9):
+def merge_results(tfidf_results, embedding_results, alpha=0.5):
     merged = {}
 
     for doc in tfidf_results:
@@ -54,10 +54,10 @@ def merge_results(tfidf_results, embedding_results, alpha=0.9):
 
 # ✅ Main hybrid endpoint
 @app.get("/hybrid_search")
-async def hybrid_search(query: str = Query(...)):
+async def hybrid_search(query: str = Query(...), dataset: str = Query(...)):
     async with httpx.AsyncClient() as client:
-        tfidf_response = await client.post(TFIDF_API_URL, data={"query": query, "algorithm": "tfidf"})
-        embed_response = await client.post(EMBEDDING_API_URL,data={"query": query, "algorithm": "embedding"})
+        tfidf_response = await client.post(TFIDF_API_URL, data={"query": query, "dataset": dataset})
+        embed_response = await client.post(EMBEDDING_API_URL,data={"query": query, "dataset": dataset})
         tfidf_results = tfidf_response.json().get("results", [])
         embedding_results = embed_response.json().get("results", [])
         combined_results = merge_results(tfidf_results, embedding_results)
